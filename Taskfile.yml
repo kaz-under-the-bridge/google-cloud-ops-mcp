@@ -1,0 +1,177 @@
+# https://taskfile.dev
+version: '3'
+
+vars:
+  BINARY_NAME: gcp-ops-mcp
+  GO_FILES:
+    sh: find . -name '*.go' -not -path './vendor/*'
+
+tasks:
+  default:
+    desc: デフォルトタスク（ヘルプ表示）
+    cmds:
+      - task --list
+
+  # ============================================
+  # ビルド
+  # ============================================
+  build:
+    desc: バイナリをビルド
+    deps: [vet]
+    cmds:
+      - go build -o {{.BINARY_NAME}} .
+    sources:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+    generates:
+      - '{{.BINARY_NAME}}'
+
+  build-all:
+    desc: 全プラットフォーム向けビルド
+    deps: [vet]
+    cmds:
+      - GOOS=darwin GOARCH=amd64 go build -o {{.BINARY_NAME}}-darwin-amd64 .
+      - GOOS=darwin GOARCH=arm64 go build -o {{.BINARY_NAME}}-darwin-arm64 .
+      - GOOS=linux GOARCH=amd64 go build -o {{.BINARY_NAME}}-linux-amd64 .
+
+  # ============================================
+  # テスト
+  # ============================================
+  test:
+    desc: 全テスト実行
+    cmds:
+      - go test -v ./...
+
+  test-short:
+    desc: 短時間テストのみ実行
+    cmds:
+      - go test -short ./...
+
+  test-coverage:
+    desc: カバレッジレポート生成
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - 'echo "カバレッジレポート: coverage.html"'
+
+  test-race:
+    desc: レース条件検出テスト
+    cmds:
+      - go test -race ./...
+
+  # ============================================
+  # コード品質
+  # ============================================
+  fmt:
+    desc: コードフォーマット
+    cmds:
+      - gofmt -s -w .
+
+  vet:
+    desc: go vet 実行
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: golangci-lint 実行
+    cmds:
+      - golangci-lint run ./...
+
+  staticcheck:
+    desc: staticcheck 実行
+    cmds:
+      - staticcheck ./...
+
+  fix:
+    desc: import整理とフォーマット
+    cmds:
+      - goimports -w .
+      - gofmt -s -w .
+
+  check:
+    desc: 全品質チェック（fmt, vet, lint, test）
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test
+
+  # ============================================
+  # 開発支援
+  # ============================================
+  run:
+    desc: MCPサーバーを起動（デバッグ用）
+    deps: [build]
+    cmds:
+      - ./{{.BINARY_NAME}}
+
+  clean:
+    desc: ビルド成果物を削除
+    cmds:
+      - rm -f {{.BINARY_NAME}}
+      - rm -f {{.BINARY_NAME}}-*
+      - rm -f coverage.out coverage.html
+
+  deps:
+    desc: 依存関係を更新
+    cmds:
+      - go mod tidy
+      - go mod download
+
+  # ============================================
+  # MCP テスト
+  # ============================================
+  mcp-init:
+    desc: MCP initialize テスト
+    deps: [build]
+    cmds:
+      - echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | ./{{.BINARY_NAME}}
+
+  mcp-tools:
+    desc: MCP tools/list テスト
+    deps: [build]
+    cmds:
+      - echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | ./{{.BINARY_NAME}}
+
+  # ============================================
+  # Docker (devcontainer)
+  # ============================================
+  docker-build:
+    desc: Dockerイメージをビルド
+    cmds:
+      - docker compose build
+
+  docker-up:
+    desc: 開発コンテナを起動
+    cmds:
+      - docker compose up -d
+
+  docker-down:
+    desc: 開発コンテナを停止
+    cmds:
+      - docker compose down
+
+  docker-shell:
+    desc: 開発コンテナにシェル接続
+    deps: [docker-up]
+    cmds:
+      - docker compose exec dev bash
+
+  docker-test:
+    desc: コンテナ内でテスト実行
+    deps: [docker-up]
+    cmds:
+      - docker compose exec dev task test
+
+  docker-check:
+    desc: コンテナ内で全品質チェック
+    deps: [docker-up]
+    cmds:
+      - docker compose exec dev task check
+
+  docker-run:
+    desc: "コンテナ内で任意コマンド実行（例: task docker-run -- go version）"
+    deps: [docker-up]
+    cmds:
+      - "docker compose exec dev {{.CLI_ARGS}}"

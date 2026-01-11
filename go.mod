@@ -1,6 +1,8 @@
 module github.com/kaz-under-the-bridge/google-cloud-ops-mcp
 
-go 1.25.4
+go 1.24.0
+
+toolchain go1.24.11
 
 require (
 	cloud.google.com/go/logging v1.13.1

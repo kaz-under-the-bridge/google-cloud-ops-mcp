@@ -1,0 +1,22 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      # ワークスペース
+      - .:/workspace:cached
+      # GCP認証情報（ADC）
+      - ~/.config/gcloud:/root/.config/gcloud:ro
+      # Go modules cache（ビルド高速化）
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    working_dir: /workspace
+    # コンテナを起動したまま維持（devcontainer用）
+    command: sleep infinity
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
