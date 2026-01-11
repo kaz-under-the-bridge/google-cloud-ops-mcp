@@ -27,6 +27,12 @@ go.work.sum
 # env file
 .env
 
+# Config file with sensitive data (project IDs, etc.)
+config.yaml
+
+# Built binary
+gcp-ops-mcp
+
 # Editor/IDE
 # .idea/
 # .vscode/

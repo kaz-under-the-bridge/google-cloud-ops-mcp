@@ -1,0 +1,20 @@
+# GCP Ops MCP Server Configuration
+#
+# Copy this file to config.yaml and update with your settings.
+# IMPORTANT: config.yaml is in .gitignore and should NOT be committed.
+
+# Project IDs allowed to be queried (PoC: will be enforced by guardrails)
+allowed_project_ids:
+  - your-project-id
+  - another-project-id
+
+# Query limits (PoC: will be enforced by guardrails)
+limits:
+  # Maximum time range in hours (default: 72)
+  max_range_hours: 72
+
+  # Maximum log entries to return (default: 500)
+  max_log_entries: 500
+
+  # Maximum time series to return (default: 50)
+  max_time_series: 50
