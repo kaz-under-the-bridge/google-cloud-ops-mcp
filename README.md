@@ -18,33 +18,45 @@ GCP Cloud Logging / Monitoring を AI（Claude Code等）から安全に使う�
 - **Go実装**: 単一バイナリで配布可能、低レイテンシ
 - **ADC対応**: Application Default Credentials で認証
 
-## 必要な権限
+## クイックスタート（Claude Code向け）
 
-最小限のIAM権限：
-- `roles/logging.viewer` - ログ読み取り
-- `roles/monitoring.viewer` - メトリクス読み取り
+### 前提条件
 
-## インストール
+- Go 1.24+
+- [go-task](https://taskfile.dev/) (`brew install go-task`)
+- gcloud CLI
 
-```bash
-go install github.com/kaz-under-the-bridge/google-cloud-ops-mcp@latest
-```
-
-または:
+### セットアップ
 
 ```bash
+# 1. クローン
 git clone https://github.com/kaz-under-the-bridge/google-cloud-ops-mcp.git
 cd google-cloud-ops-mcp
-go build -o gcp-ops-mcp
+
+# 2. ビルド
+task build
+
+# 3. GCP認証（ADC）
+gcloud auth application-default login
+
+# 4. Claude Code に登録
+claude mcp add gcp-ops $(pwd)/gcp-ops-mcp
 ```
 
-## 設定
+これで Claude Code から GCP のログ・メトリクスにアクセスできます。
 
-認証方式（優先順）：
-1. Workload Identity / Service Account（本番環境）
-2. ADC（開発環境）：`gcloud auth application-default login`
+### 設定ファイル（オプション）
 
-設定ファイル例（`config.yaml`）：
+プロジェクト制限やクエリ制限を設定する場合：
+
+```bash
+# 設定ファイルを作成
+cp config.yaml.example config.yaml
+# 編集後、MCP登録時に指定
+claude mcp add gcp-ops $(pwd)/gcp-ops-mcp -- -config $(pwd)/config.yaml
+```
+
+設定例（`config.yaml`）：
 
 ```yaml
 allowed_project_ids:
@@ -56,6 +68,12 @@ limits:
   max_log_entries: 500
   max_time_series: 50
 ```
+
+## 必要なGCP権限
+
+最小限のIAM権限：
+- `roles/logging.viewer` - ログ読み取り
+- `roles/monitoring.viewer` - メトリクス読み取り
 
 ## MCP Tools
 
@@ -76,21 +94,6 @@ Logs Explorer 相当の検索
 詳細は [docs/design/concept.md](docs/design/concept.md) を参照。
 
 ## 使用例
-
-### Claude Code / Cursor での設定
-
-MCP設定ファイル（`~/.cursor/mcp.json` など）に追加：
-
-```json
-{
-  "mcpServers": {
-    "gcp-ops": {
-      "command": "/path/to/gcp-ops-mcp",
-      "args": ["-config", "/path/to/config.yaml"]
-    }
-  }
-}
-```
 
 ### 典型的な障害調査フロー
 
