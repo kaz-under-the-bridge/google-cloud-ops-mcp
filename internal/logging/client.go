@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"cloud.google.com/go/logging/apiv2/loggingpb"
 	logging "cloud.google.com/go/logging/apiv2"
+	"cloud.google.com/go/logging/apiv2/loggingpb"
 	"google.golang.org/api/iterator"
 )
 
@@ -26,9 +26,9 @@ type TimeRange struct {
 
 // QueryResult is the result of logging.query
 type QueryResult struct {
-	QueryMeta QueryMeta    `json:"query_meta"`
-	Entries   []LogEntry   `json:"entries"`
-	Stats     ResultStats  `json:"stats"`
+	QueryMeta QueryMeta   `json:"query_meta"`
+	Entries   []LogEntry  `json:"entries"`
+	Stats     ResultStats `json:"stats"`
 }
 
 type QueryMeta struct {
@@ -40,16 +40,16 @@ type QueryMeta struct {
 }
 
 type LogEntry struct {
-	Timestamp   string         `json:"timestamp"`
-	Severity    string         `json:"severity"`
-	LogName     string         `json:"log_name"`
-	Resource    Resource       `json:"resource"`
+	Timestamp   string            `json:"timestamp"`
+	Severity    string            `json:"severity"`
+	LogName     string            `json:"log_name"`
+	Resource    Resource          `json:"resource"`
 	Labels      map[string]string `json:"labels,omitempty"`
-	Trace       string         `json:"trace,omitempty"`
-	SpanID      string         `json:"span_id,omitempty"`
-	TextPayload string         `json:"text_payload,omitempty"`
-	JSONPayload map[string]any `json:"json_payload,omitempty"`
-	InsertID    string         `json:"insert_id"`
+	Trace       string            `json:"trace,omitempty"`
+	SpanID      string            `json:"span_id,omitempty"`
+	TextPayload string            `json:"text_payload,omitempty"`
+	JSONPayload map[string]any    `json:"json_payload,omitempty"`
+	InsertID    string            `json:"insert_id"`
 }
 
 type Resource struct {
@@ -168,16 +168,17 @@ func parseTimeRange(tr TimeRange) (time.Time, time.Time, error) {
 	}
 
 	// Parse start time
-	if tr.Start == "" {
+	switch {
+	case tr.Start == "":
 		startTime = now.Add(-30 * time.Minute) // default: 30 minutes ago
-	} else if len(tr.Start) > 0 && tr.Start[0] == '-' {
+	case len(tr.Start) > 0 && tr.Start[0] == '-':
 		// Relative time (e.g., "-1h", "-30m")
 		duration, err := time.ParseDuration(tr.Start[1:])
 		if err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("invalid relative start time: %w", err)
 		}
 		startTime = now.Add(-duration)
-	} else {
+	default:
 		startTime, err = time.Parse(time.RFC3339, tr.Start)
 		if err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("invalid start time: %w", err)
@@ -237,6 +238,48 @@ func (c *Client) QueryHandler() func(ctx context.Context, args json.RawMessage) 
 		if params.ProjectID == "" {
 			return nil, fmt.Errorf("project_id is required")
 		}
+
+		return c.Query(ctx, params)
+	}
+}
+
+// Validator はガードレール検証用インターフェース
+type Validator interface {
+	ValidateProjectID(projectID string) error
+	ValidateTimeRange(start, end time.Time) error
+	ClampLogLimit(limit int) int
+}
+
+// QueryHandlerWithGuardrail returns a handler with guardrail validation
+func (c *Client) QueryHandlerWithGuardrail(v Validator) func(ctx context.Context, args json.RawMessage) (any, error) {
+	return func(ctx context.Context, args json.RawMessage) (any, error) {
+		var params QueryParams
+		if err := json.Unmarshal(args, &params); err != nil {
+			return nil, fmt.Errorf("failed to parse arguments: %w", err)
+		}
+
+		if params.ProjectID == "" {
+			return nil, fmt.Errorf("project_id is required")
+		}
+
+		// ガードレール: プロジェクトID検証
+		if err := v.ValidateProjectID(params.ProjectID); err != nil {
+			return nil, err
+		}
+
+		// 時間範囲のパース
+		startTime, endTime, err := parseTimeRange(params.TimeRange)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse time range: %w", err)
+		}
+
+		// ガードレール: 時間範囲検証
+		if err := v.ValidateTimeRange(startTime, endTime); err != nil {
+			return nil, err
+		}
+
+		// ガードレール: 件数制限
+		params.Limit = v.ClampLogLimit(params.Limit)
 
 		return c.Query(ctx, params)
 	}

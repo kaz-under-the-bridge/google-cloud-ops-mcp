@@ -208,16 +208,17 @@ func parseTimeRange(tr TimeRange) (time.Time, time.Time, error) {
 	}
 
 	// Parse start time
-	if tr.Start == "" {
+	switch {
+	case tr.Start == "":
 		startTime = now.Add(-30 * time.Minute) // default: 30 minutes ago
-	} else if len(tr.Start) > 0 && tr.Start[0] == '-' {
+	case len(tr.Start) > 0 && tr.Start[0] == '-':
 		// Relative time (e.g., "-1h", "-30m")
 		duration, err := time.ParseDuration(tr.Start[1:])
 		if err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("invalid relative start time: %w", err)
 		}
 		startTime = now.Add(-duration)
-	} else {
+	default:
 		startTime, err = time.Parse(time.RFC3339, tr.Start)
 		if err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("invalid start time: %w", err)
@@ -257,6 +258,51 @@ func (c *Client) QueryTimeSeriesHandler() func(ctx context.Context, args json.Ra
 		if params.MetricType == "" {
 			return nil, fmt.Errorf("metric_type is required")
 		}
+
+		return c.QueryTimeSeries(ctx, params)
+	}
+}
+
+// Validator はガードレール検証用インターフェース
+type Validator interface {
+	ValidateProjectID(projectID string) error
+	ValidateTimeRange(start, end time.Time) error
+	ClampTimeSeriesLimit(limit int) int
+}
+
+// QueryTimeSeriesHandlerWithGuardrail returns a handler with guardrail validation
+func (c *Client) QueryTimeSeriesHandlerWithGuardrail(v Validator) func(ctx context.Context, args json.RawMessage) (any, error) {
+	return func(ctx context.Context, args json.RawMessage) (any, error) {
+		var params QueryTimeSeriesParams
+		if err := json.Unmarshal(args, &params); err != nil {
+			return nil, fmt.Errorf("failed to parse arguments: %w", err)
+		}
+
+		if params.ProjectID == "" {
+			return nil, fmt.Errorf("project_id is required")
+		}
+		if params.MetricType == "" {
+			return nil, fmt.Errorf("metric_type is required")
+		}
+
+		// ガードレール: プロジェクトID検証
+		if err := v.ValidateProjectID(params.ProjectID); err != nil {
+			return nil, err
+		}
+
+		// 時間範囲のパース
+		startTime, endTime, err := parseTimeRange(params.TimeRange)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse time range: %w", err)
+		}
+
+		// ガードレール: 時間範囲検証
+		if err := v.ValidateTimeRange(startTime, endTime); err != nil {
+			return nil, err
+		}
+
+		// ガードレール: 系列数制限
+		params.MaxSeries = v.ClampTimeSeriesLimit(params.MaxSeries)
 
 		return c.QueryTimeSeries(ctx, params)
 	}
